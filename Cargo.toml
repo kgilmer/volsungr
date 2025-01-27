@@ -1,9 +1,11 @@
 [package]
 name = "volsungr"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+license-file = "LICENSE"
+description = "A command-line tool that searches for the latest version of a crate that is compatible with a specified version of the Rust toolchain."
+repository = "https://github.com/kgilmer/volsungr"
+readme = "README.md"
 
 [dependencies]
-crates_io_api = "0.8.2"
+crates_io_api = "0.8"

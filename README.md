@@ -1,6 +1,6 @@
 # Volsungr
 
-A command-line tool that searches for the lasest version of a crate that is compatible with a specified version of the Rust toolchain.
+A command-line tool that searches for the latest version of a crate that is compatible with a specified version of the Rust toolchain.
 
 ## Status
 
