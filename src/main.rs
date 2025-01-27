@@ -1,6 +1,8 @@
+/// A command-line tool that searches for the latest version of a crate that is compatible with a specified version of the Rust toolchain.
 use std::{env, process::exit};
 
-use crates_io_api::{SyncClient, Error};
+use crates_io_api::SyncClient;
+use volsungr::{query_package, PackageCompatMatchType};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -10,53 +12,46 @@ fn main() {
         exit(1);
     }
 
-    let rustc_version = args.get(1).unwrap();
-    let rustc_version = if rustc_version.starts_with("v") {
-        rustc_version[1..].as_ref()
+    let rustc_version = args.get(1).expect("Failed to get param 1");
+    let rustc_version = if let Some(version) = rustc_version.strip_prefix("v") {
+        version
     } else {
         rustc_version.as_str()
     };
-    let pkg_name = args.get(2).unwrap();
+    let pkg_name = args.get(2).expect("Failed to get param 2");
 
     let client = SyncClient::new(
-        "my-user-agent (my-contact@domain.com)",
+        "volsungr (me@fivefivefive.com)",
         std::time::Duration::from_millis(1000),
     )
-    .unwrap();
+    .expect("Cannot create crates.io client");
 
-    query_package(&client, pkg_name, rustc_version).expect("Can query crates.io");
-}
+    println!(
+        "Searching {} versions compatible with rust {}...",
+        pkg_name, rustc_version
+    );
 
-fn query_package(client: &SyncClient, pkg_name: &str, rustc_version: &str) -> Result<(), Error> {
-    println!("Searching {} versions compatible with rust {}...", pkg_name, rustc_version);
-
-    let ct = client.get_crate(pkg_name)?;
-
-    let mut exact_matches = vec![];
-    let mut earlier_matches = vec![];
-    let mut invalid_matches = vec![];
-
-    for version in ct.versions {
-        if let Some(rv) = version.rust_version {
-            if rv == rustc_version {
-                exact_matches.push(version.num);
-            } else if rv.as_str() < rustc_version {
-                earlier_matches.push(version.num);
-            } else {
-                invalid_matches.push((version.num, rv));
-            }
-        } else {
-            // println!("{} {} does not specify a rust version", pkg_name, version.num);
+    match query_package(&client, pkg_name, rustc_version).expect("Failed to query crates.io") {
+        PackageCompatMatchType::Exact(versions) => {
+            println!(
+                "Latest matching version of {} = {:?}",
+                pkg_name, versions[0]
+            )
+        }
+        PackageCompatMatchType::Previous(versions) => {
+            println!(
+                "Latest compatible version of {} = {:?}",
+                pkg_name, versions[0]
+            )
+        }
+        PackageCompatMatchType::NoMatch(versions) => {
+            println!(
+                "No versions of {} are compatible with rust version {} (checked versions {:?})",
+                pkg_name, rustc_version, versions
+            );
+        }
+        PackageCompatMatchType::Unknown(version) => {
+            println!("{} {} does not specify a rust version", pkg_name, version);
         }
     }
-
-    if !exact_matches.is_empty() {
-        println!("Latest matching version of {} = {:?}", pkg_name, exact_matches[0])
-    } else if !earlier_matches.is_empty() {
-        println!("Latest compatible version of {} = {:?}", pkg_name, earlier_matches[0])
-    } else {
-        println!("No versions of {} are compatible with rust version {} (checked versions {:?})", pkg_name, rustc_version, invalid_matches);
-    }
-
-    Ok(())
 }
