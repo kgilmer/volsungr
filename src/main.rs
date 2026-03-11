@@ -13,11 +13,9 @@ fn main() {
     }
 
     let rustc_version = args.get(1).unwrap();
-    let rustc_version = if rustc_version.starts_with('v') {
-        &rustc_version[1..]
-    } else {
-        rustc_version.as_str()
-    };
+    let rustc_version = rustc_version
+        .strip_prefix('v')
+        .unwrap_or(rustc_version.as_str());
     let pkg_name = args.get(2).unwrap();
 
     let client = SyncClient::new(
@@ -44,10 +42,7 @@ fn main() {
                 "No versions of {} are compatible with rust version {} (checked versions {:?})",
                 pkg_name,
                 rustc_version,
-                invalid
-                    .iter()
-                    .map(|(v, _)| v.as_str())
-                    .collect::<Vec<_>>()
+                invalid.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>()
             );
         }
         Err(e) => {
