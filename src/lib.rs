@@ -1,6 +1,9 @@
 use crates_io_api::{Error, SyncClient};
 use semver::Version;
+use serde::Deserialize;
 use std::fmt;
+use std::fs;
+use std::path::Path;
 
 /// Specifies possible types of version matching from package to target rustc version
 pub enum PackageCompatMatchType {
@@ -37,27 +40,103 @@ impl From<Error> for LibError {
     }
 }
 
+/// Structures for parsing Cargo.toml
+#[derive(Deserialize, Debug)]
+pub struct CargoManifest {
+    pub dependencies: Option<std::collections::BTreeMap<String, Dependency>>,
+    pub dev_dependencies: Option<std::collections::BTreeMap<String, Dependency>>,
+    pub build_dependencies: Option<std::collections::BTreeMap<String, Dependency>>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
+pub enum Dependency {
+    Simple(String),
+    Detailed(DependencyDetails),
+}
+
+#[derive(Deserialize, Debug)]
+pub struct DependencyDetails {
+    pub version: Option<String>,
+    pub path: Option<String>,
+    pub git: Option<String>,
+}
+
+/// Parse a Cargo.toml file and extract all dependency names
+pub fn parse_cargo_toml(path: &Path) -> Result<Vec<String>, LibError> {
+    let content = fs::read_to_string(path).map_err(|e| {
+        LibError::InvalidVersion(format!("Failed to read Cargo.toml: {}", e))
+    })?;
+
+    let manifest: CargoManifest = toml::from_str(&content).map_err(|e| {
+        LibError::InvalidVersion(format!("Failed to parse Cargo.toml: {}", e))
+    })?;
+
+    let mut dependencies = std::collections::BTreeSet::new();
+
+    // Collect all dependency names from different sections
+    if let Some(deps) = manifest.dependencies {
+        for (name, dep) in deps {
+            // Skip path and git dependencies as they can't be queried from crates.io
+            match dep {
+                Dependency::Simple(_) => {
+                    dependencies.insert(name);
+                }
+                Dependency::Detailed(details) => {
+                    if details.path.is_none() && details.git.is_none() {
+                        dependencies.insert(name);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(deps) = manifest.dev_dependencies {
+        for (name, dep) in deps {
+            match dep {
+                Dependency::Simple(_) => {
+                    dependencies.insert(name);
+                }
+                Dependency::Detailed(details) => {
+                    if details.path.is_none() && details.git.is_none() {
+                        dependencies.insert(name);
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some(deps) = manifest.build_dependencies {
+        for (name, dep) in deps {
+            match dep {
+                Dependency::Simple(_) => {
+                    dependencies.insert(name);
+                }
+                Dependency::Detailed(details) => {
+                    if details.path.is_none() && details.git.is_none() {
+                        dependencies.insert(name);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(dependencies.into_iter().collect())
+}
+
 /// Parse a version string into a semver Version
-/// If MINOR or PATCH is omitted, they are assumed to be 0 and a warning is printed
-fn parse_version(version_str: &str) -> Result<Version, LibError> {
+/// If MINOR or PATCH is omitted, they are assumed to be 0 (no warnings printed)
+pub fn parse_version(version_str: &str) -> Result<Version, LibError> {
     let parts: Vec<&str> = version_str.split('.').collect();
 
     match parts.len() {
         1 => {
             // Only major version provided, assume minor and patch are 0
-            eprintln!(
-                "Warning: Assuming version {}.0.0 (minor and patch segments omitted)",
-                parts[0]
-            );
             Version::parse(&format!("{}.0.0", parts[0]))
                 .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
         }
         2 => {
             // Major and minor provided, assume patch is 0
-            eprintln!(
-                "Warning: Assuming version {}.0 (patch segment omitted)",
-                version_str
-            );
             Version::parse(&format!("{}.0", version_str))
                 .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
         }
