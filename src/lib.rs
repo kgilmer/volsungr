@@ -19,7 +19,11 @@ pub enum LibError {
 impl fmt::Display for LibError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            LibError::InvalidVersion(v) => write!(f, "Invalid version format: {}", v),
+            LibError::InvalidVersion(v) => write!(
+                f,
+                "Invalid version format: '{}'. Version must be in MAJOR.MINOR.PATCH format (e.g., 1.70.0)",
+                v
+            ),
             LibError::ApiError(e) => write!(f, "API error: {}", e),
         }
     }
@@ -34,8 +38,35 @@ impl From<Error> for LibError {
 }
 
 /// Parse a version string into a semver Version
+/// If MINOR or PATCH is omitted, they are assumed to be 0 and a warning is printed
 fn parse_version(version_str: &str) -> Result<Version, LibError> {
-    Version::parse(version_str).map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+    let parts: Vec<&str> = version_str.split('.').collect();
+
+    match parts.len() {
+        1 => {
+            // Only major version provided, assume minor and patch are 0
+            eprintln!(
+                "Warning: Assuming version {}.0.0 (minor and patch segments omitted)",
+                parts[0]
+            );
+            Version::parse(&format!("{}.0.0", parts[0]))
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+        }
+        2 => {
+            // Major and minor provided, assume patch is 0
+            eprintln!(
+                "Warning: Assuming version {}.0 (patch segment omitted)",
+                version_str
+            );
+            Version::parse(&format!("{}.0", version_str))
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+        }
+        _ => {
+            // Full version or more than 3 parts, try to parse as-is
+            Version::parse(version_str)
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+        }
+    }
 }
 
 /// Determine the best compatible match for the given package and target rustc version
