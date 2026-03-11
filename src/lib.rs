@@ -13,7 +13,11 @@ pub struct SemVer {
 
 impl SemVer {
     pub fn new(major: u64, minor: u64, patch: u64) -> Self {
-        SemVer { major, minor, patch }
+        SemVer {
+            major,
+            minor,
+            patch,
+        }
     }
 }
 
@@ -61,22 +65,18 @@ impl From<Error> for LibError {
 /// Helper function to check if a dependency is a path or git dependency
 fn is_path_or_git_dependency(value: &toml::Value) -> bool {
     match value {
-        toml::Value::Table(table) => {
-            table.contains_key("path") || table.contains_key("git")
-        }
+        toml::Value::Table(table) => table.contains_key("path") || table.contains_key("git"),
         _ => false,
     }
 }
 
 /// Parse a Cargo.toml file and extract all dependency names
 pub fn parse_cargo_toml(path: &Path) -> Result<Vec<String>, LibError> {
-    let content = fs::read_to_string(path).map_err(|e| {
-        LibError::InvalidVersion(format!("Failed to read Cargo.toml: {}", e))
-    })?;
+    let content = fs::read_to_string(path)
+        .map_err(|e| LibError::InvalidVersion(format!("Failed to read Cargo.toml: {}", e)))?;
 
-    let manifest: toml::Value = toml::from_str(&content).map_err(|e| {
-        LibError::InvalidVersion(format!("Failed to parse Cargo.toml: {}", e))
-    })?;
+    let manifest: toml::Value = toml::from_str(&content)
+        .map_err(|e| LibError::InvalidVersion(format!("Failed to parse Cargo.toml: {}", e)))?;
 
     let mut dependencies = std::collections::BTreeSet::new();
 
@@ -95,8 +95,16 @@ pub fn parse_cargo_toml(path: &Path) -> Result<Vec<String>, LibError> {
     // Collect all dependency names from different sections
     if let Some(table) = manifest.as_table() {
         process_deps(table.get("dependencies"));
-        process_deps(table.get("dev-dependencies").or_else(|| table.get("dev_dependencies")));
-        process_deps(table.get("build-dependencies").or_else(|| table.get("build_dependencies")));
+        process_deps(
+            table
+                .get("dev-dependencies")
+                .or_else(|| table.get("dev_dependencies")),
+        );
+        process_deps(
+            table
+                .get("build-dependencies")
+                .or_else(|| table.get("build_dependencies")),
+        );
     }
 
     Ok(dependencies.into_iter().collect())
@@ -110,20 +118,32 @@ pub fn parse_version(version_str: &str) -> Result<SemVer, LibError> {
     match parts.len() {
         1 => {
             // Only major version provided, assume minor and patch are 0
-            let major: u64 = parts[0].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let major: u64 = parts[0]
+                .parse()
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
             Ok(SemVer::new(major, 0, 0))
         }
         2 => {
             // Major and minor provided, assume patch is 0
-            let major: u64 = parts[0].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
-            let minor: u64 = parts[1].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let major: u64 = parts[0]
+                .parse()
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let minor: u64 = parts[1]
+                .parse()
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
             Ok(SemVer::new(major, minor, 0))
         }
         _ => {
             // Full version or more than 3 parts, parse first 3 parts
-            let major: u64 = parts[0].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
-            let minor: u64 = parts[1].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
-            let patch: u64 = parts[2].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let major: u64 = parts[0]
+                .parse()
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let minor: u64 = parts[1]
+                .parse()
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let patch: u64 = parts[2]
+                .parse()
+                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
             Ok(SemVer::new(major, minor, patch))
         }
     }

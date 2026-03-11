@@ -94,7 +94,7 @@ fn main() {
     // If directory is provided, parse Cargo.toml and extract dependencies
     if let Some(dir) = &cli.directory {
         let cargo_toml_path = dir.join("Cargo.toml");
-        
+
         if !cargo_toml_path.exists() {
             eprintln!("Error: Cargo.toml not found at {:?}", cargo_toml_path);
             exit(1);
@@ -139,10 +139,7 @@ fn main() {
             }
             Ok(PackageCompatMatchType::NoMatch(invalid)) => {
                 if cli.brief {
-                    println!(
-                        "{} = \"<none>\"",
-                        pkg_name
-                    );
+                    println!("{} = \"<none>\"", pkg_name);
                 } else {
                     println!(
                         "No versions of {} are compatible with rustc version \"{}\" (checked versions {:?})",
