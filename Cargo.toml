@@ -8,4 +8,5 @@ repository = "https://github.com/kgilmer/volsungr"
 readme = "README.md"
 
 [dependencies]
-crates_io_api = "0.8"
+crates_io_api = "0.8.2"
+semver = "1.0"
