@@ -1,9 +1,27 @@
 use crates_io_api::{Error, SyncClient};
-use semver::Version;
-use serde::Deserialize;
 use std::fmt;
 use std::fs;
 use std::path::Path;
+
+/// Simple semver representation (MAJOR.MINOR.PATCH)
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SemVer {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+}
+
+impl SemVer {
+    pub fn new(major: u64, minor: u64, patch: u64) -> Self {
+        SemVer { major, minor, patch }
+    }
+}
+
+impl fmt::Display for SemVer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
 
 /// Specifies possible types of version matching from package to target rustc version
 pub enum PackageCompatMatchType {
@@ -40,26 +58,14 @@ impl From<Error> for LibError {
     }
 }
 
-/// Structures for parsing Cargo.toml
-#[derive(Deserialize, Debug)]
-pub struct CargoManifest {
-    pub dependencies: Option<std::collections::BTreeMap<String, Dependency>>,
-    pub dev_dependencies: Option<std::collections::BTreeMap<String, Dependency>>,
-    pub build_dependencies: Option<std::collections::BTreeMap<String, Dependency>>,
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum Dependency {
-    Simple(String),
-    Detailed(DependencyDetails),
-}
-
-#[derive(Deserialize, Debug)]
-pub struct DependencyDetails {
-    pub version: Option<String>,
-    pub path: Option<String>,
-    pub git: Option<String>,
+/// Helper function to check if a dependency is a path or git dependency
+fn is_path_or_git_dependency(value: &toml::Value) -> bool {
+    match value {
+        toml::Value::Table(table) => {
+            table.contains_key("path") || table.contains_key("git")
+        }
+        _ => false,
+    }
 }
 
 /// Parse a Cargo.toml file and extract all dependency names
@@ -68,82 +74,57 @@ pub fn parse_cargo_toml(path: &Path) -> Result<Vec<String>, LibError> {
         LibError::InvalidVersion(format!("Failed to read Cargo.toml: {}", e))
     })?;
 
-    let manifest: CargoManifest = toml::from_str(&content).map_err(|e| {
+    let manifest: toml::Value = toml::from_str(&content).map_err(|e| {
         LibError::InvalidVersion(format!("Failed to parse Cargo.toml: {}", e))
     })?;
 
     let mut dependencies = std::collections::BTreeSet::new();
 
+    // Helper closure to process a dependencies table
+    let mut process_deps = |deps_table: Option<&toml::Value>| {
+        if let Some(toml::Value::Table(deps)) = deps_table {
+            for (name, value) in deps {
+                // Skip path and git dependencies as they can't be queried from crates.io
+                if !is_path_or_git_dependency(value) {
+                    dependencies.insert(name.clone());
+                }
+            }
+        }
+    };
+
     // Collect all dependency names from different sections
-    if let Some(deps) = manifest.dependencies {
-        for (name, dep) in deps {
-            // Skip path and git dependencies as they can't be queried from crates.io
-            match dep {
-                Dependency::Simple(_) => {
-                    dependencies.insert(name);
-                }
-                Dependency::Detailed(details) => {
-                    if details.path.is_none() && details.git.is_none() {
-                        dependencies.insert(name);
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(deps) = manifest.dev_dependencies {
-        for (name, dep) in deps {
-            match dep {
-                Dependency::Simple(_) => {
-                    dependencies.insert(name);
-                }
-                Dependency::Detailed(details) => {
-                    if details.path.is_none() && details.git.is_none() {
-                        dependencies.insert(name);
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(deps) = manifest.build_dependencies {
-        for (name, dep) in deps {
-            match dep {
-                Dependency::Simple(_) => {
-                    dependencies.insert(name);
-                }
-                Dependency::Detailed(details) => {
-                    if details.path.is_none() && details.git.is_none() {
-                        dependencies.insert(name);
-                    }
-                }
-            }
-        }
+    if let Some(table) = manifest.as_table() {
+        process_deps(table.get("dependencies"));
+        process_deps(table.get("dev-dependencies").or_else(|| table.get("dev_dependencies")));
+        process_deps(table.get("build-dependencies").or_else(|| table.get("build_dependencies")));
     }
 
     Ok(dependencies.into_iter().collect())
 }
 
-/// Parse a version string into a semver Version
+/// Parse a version string into a SemVer
 /// If MINOR or PATCH is omitted, they are assumed to be 0 (no warnings printed)
-pub fn parse_version(version_str: &str) -> Result<Version, LibError> {
+pub fn parse_version(version_str: &str) -> Result<SemVer, LibError> {
     let parts: Vec<&str> = version_str.split('.').collect();
 
     match parts.len() {
         1 => {
             // Only major version provided, assume minor and patch are 0
-            Version::parse(&format!("{}.0.0", parts[0]))
-                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+            let major: u64 = parts[0].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            Ok(SemVer::new(major, 0, 0))
         }
         2 => {
             // Major and minor provided, assume patch is 0
-            Version::parse(&format!("{}.0", version_str))
-                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+            let major: u64 = parts[0].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let minor: u64 = parts[1].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            Ok(SemVer::new(major, minor, 0))
         }
         _ => {
-            // Full version or more than 3 parts, try to parse as-is
-            Version::parse(version_str)
-                .map_err(|_| LibError::InvalidVersion(version_str.to_string()))
+            // Full version or more than 3 parts, parse first 3 parts
+            let major: u64 = parts[0].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let minor: u64 = parts[1].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            let patch: u64 = parts[2].parse().map_err(|_| LibError::InvalidVersion(version_str.to_string()))?;
+            Ok(SemVer::new(major, minor, patch))
         }
     }
 }
