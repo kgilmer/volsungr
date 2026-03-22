@@ -1,17 +1,26 @@
+//! # volsungr
+//!
+//! A command-line tool that searches for the latest version of a crate
+//! that is compatible with a specified version of the Rust toolchain.
+
 use crates_io_api::{Error, SyncClient};
 use std::fmt;
 use std::fs;
 use std::path::Path;
 
-/// Simple semver representation (MAJOR.MINOR.PATCH)
+/// Represents a semantic version (MAJOR.MINOR.PATCH).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SemVer {
+    /// The major version number.
     pub major: u64,
+    /// The minor version number.
     pub minor: u64,
+    /// The patch version number.
     pub patch: u64,
 }
 
 impl SemVer {
+    /// Creates a new `SemVer` instance.
     pub fn new(major: u64, minor: u64, patch: u64) -> Self {
         SemVer {
             major,
@@ -27,17 +36,22 @@ impl fmt::Display for SemVer {
     }
 }
 
-/// Specifies possible types of version matching from package to target rustc version
+/// Specifies the type of version match found for a package relative to the target Rust version.
 pub enum PackageCompatMatchType {
+    /// Found exact matches where rust-version equals the target version.
     Exact(Vec<String>),
+    /// Found previous matches where rust-version is less than the target version.
     Previous(Vec<String>),
+    /// No compatible matches found; contains invalid versions with their rust-version requirements.
     NoMatch(Vec<(String, String)>),
 }
 
-/// Custom error type for the library
+/// Custom error type for the library.
 #[derive(Debug)]
 pub enum LibError {
+    /// Invalid version format error.
     InvalidVersion(String),
+    /// API error from crates.io.
     ApiError(Error),
 }
 
